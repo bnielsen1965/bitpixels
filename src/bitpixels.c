@@ -3,28 +3,15 @@
 #include <math.h>
 
 
-//
-// pixel operations //
-//
-
-
-BitPixel getBIPixel (uint32_t x, uint32_t y, BitImage *image) {
-  int layerOffset = getBILayerOffset(x, y, image);
-  BitPixel pixel = (image->data[layerOffset] >> (7 - x % 8)) & BITPIXEL_MASK;
-  if (image->channels == 2) pixel |= ((image->alpha[layerOffset] >> (7 - x % 8)) << 1) & BITALPHA_MASK;
-  else pixel |= BITALPHA_MASK;
-  return pixel;
-}
-
-
 
 //
-// place methods //
+// place methods - overwrites existing pixel with the provided pixel //
 //
 
 
-// place the pixel as is into the image
-void placeBIPixel (uint32_t x, uint32_t y, BitPixel pixel, BitImage *image) {
+// place the BitPixel as is into the BitImage, returns 0 on success, 1 on failure
+int placeBIPixel (uint32_t x, uint32_t y, BitPixel pixel, BitImage *image) {
+  if (validateBICoords(x, y, image)) return 1;
   // get current image data byte
   int layerOffset = getBILayerOffset(x, y, image);
   uint8_t imageByte = image->data[layerOffset];
@@ -35,16 +22,18 @@ void placeBIPixel (uint32_t x, uint32_t y, BitPixel pixel, BitImage *image) {
   else imageByte |= pixelByte;
   image->data[layerOffset] = imageByte;
   // if image has no alpha layer then return
-  if (image->channels == 1) return;
+  if (image->channels == 1) return 0;
   // get current image alpha byte
   imageByte = image->alpha[layerOffset];
   // merge the pixel alpha byte into layer
   if (!(pixel & BITALPHA_MASK)) imageByte &= ~pixelByte;
   else imageByte |= pixelByte;
   image->alpha[layerOffset] = imageByte;
+  return 0;
 }
 
-void placeBIImage (int x, int y, BitImage *src_image, BitImage *dst_image) {
+// place a source BitImage into a destination BitImage as is
+void placeBIImage (uint32_t x, uint32_t y, BitImage *src_image, BitImage *dst_image) {
   for (int iy = 0; iy < src_image->height; iy++) {
     for (int ix = 0; ix < src_image->width; ix++) {
       // uint8_t pixel = getBIDataPixel(ix, iy, src_image);
@@ -57,19 +46,21 @@ void placeBIImage (int x, int y, BitImage *src_image, BitImage *dst_image) {
 
 
 //
-// draw methods //
+// draw methods - draws pixels with alpha considered //
 //
 
 
-// draw a pixel into the image
-void drawBIPixel (int x, int y, BitPixel pixel, BitImage *image) {
+// draw a BitPixel into the BitImage, returns 0 on success, 1 on failure
+int drawBIPixel (uint32_t x, uint32_t y, BitPixel pixel, BitImage *image) {
+  if (validateBICoords(x, y, image)) return 1;
   // if transparent then do nothing
-  if (!(pixel & BITALPHA_MASK)) return;
+  if (!(pixel & BITALPHA_MASK)) return 0;
   // place the pixel in the image
-  placeBIPixel(x, y, pixel, image);
+  return placeBIPixel(x, y, pixel, image);
 }
 
-void drawBILine (int x0, int y0, int x1, int y1, BitPixel pixel, BitImage *image) {
+// draw a line of BitPixels into the BitImage
+void drawBILine (uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, BitPixel pixel, BitImage *image) {
   int dx = abs(x1 - x0);
   int sx = x0 < x1 ? 1 : -1;
   int dy = abs(y1 - y0);
@@ -90,21 +81,23 @@ void drawBILine (int x0, int y0, int x1, int y1, BitPixel pixel, BitImage *image
   }
 }
 
-void drawBIRect (int x, int y, int w, int h, BitPixel pixel, BitImage *image) {
+// draw a rectangle of BitPixels into the BitImage
+void drawBIRect (uint32_t x, uint32_t y, uint32_t w, uint32_t h, BitPixel pixel, BitImage *image) {
   drawBILine(x, y, x, y + h - 1, pixel, image);
   drawBILine(x, y + h - 1, x + w - 1, y + h - 1, pixel, image);
   drawBILine(x + w - 1, y + h - 1, x + w - 1, y, pixel, image);
   drawBILine(x + w - 1, y, x, y, pixel, image);
 }
 
-
-void drawBIFillRect (int x, int y, int w, int h, BitPixel pixel, BitImage *image) {
+// draw a filled rectangle of BitPixels into the BitImage
+void drawBIFillRect (uint32_t x, uint32_t y, uint32_t w, uint32_t h, BitPixel pixel, BitImage *image) {
   for (int iy = y; iy < y + h; iy++) {
     drawBIRect(x, iy, w, h - (iy - y) * 2, pixel, image);
   }
 }
 
-void drawBIImage (int x, int y, BitImage *src_image, BitImage *dst_image) {
+// draw a source BitImage into a destination BitImage
+void drawBIImage (uint32_t x, uint32_t y, BitImage *src_image, BitImage *dst_image) {
   for (int iy = 0; iy < src_image->height; iy++) {
     for (int ix = 0; ix < src_image->width; ix++) {
       BitPixel pixel = getBIPixel(ix, iy, src_image);
@@ -131,9 +124,26 @@ int getBIRowSize (BitImage *image) {
 }
 
 // get offset into BitImage layer based on x, y coordinates
-int getBILayerOffset (int x, int y, BitImage *image) {
+int getBILayerOffset (uint32_t x, uint32_t y, BitImage *image) {
   return y * getBIRowSize(image) + x / 8;
 }
+
+// validate the x, y coordinates for the given BitImage
+int validateBICoords (uint32_t x, uint32_t y, BitImage *image) {
+  if (x < 0 || y < 0 || x >= image->width || y >= image->width) return 1;
+  return 0;
+}
+
+// get the BitPixel at the x, y coordinates from the given BitImage
+BitPixel getBIPixel (uint32_t x, uint32_t y, BitImage *image) {
+  if (validateBICoords(x, y, image)) return BITERROR_MASK;
+  int layerOffset = getBILayerOffset(x, y, image);
+  BitPixel pixel = (image->data[layerOffset] >> (7 - x % 8)) & BITPIXEL_MASK;
+  if (image->channels == 2) pixel |= ((image->alpha[layerOffset] >> (7 - x % 8)) << 1) & BITALPHA_MASK;
+  else pixel |= BITALPHA_MASK;
+  return pixel;
+}
+
 
 
 
@@ -232,7 +242,7 @@ BitImage * freadBI (FILE *src_fp) {
 // memory operations //
 //
 
-// new BitImage
+// allocate new BitImage
 BitImage * newBI (uint32_t width, uint32_t height, uint8_t channels) {
   BitImage *image = calloc(sizeof(BitImage), 1);
   image->width = width;
