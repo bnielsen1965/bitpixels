@@ -130,7 +130,7 @@ int getBILayerOffset (uint32_t x, uint32_t y, BitImage *image) {
 
 // validate the x, y coordinates for the given BitImage
 int validateBICoords (uint32_t x, uint32_t y, BitImage *image) {
-  if (x < 0 || y < 0 || x >= image->width || y >= image->width) return 1;
+  if (x < 0 || y < 0 || x >= image->width || y >= image->height) return 1;
   return 0;
 }
 
